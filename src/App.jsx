@@ -12,29 +12,19 @@ function App() {
         useSpeechRecognition();
     const timeoutRef = useRef(null);
     const AUTO_SUBMIT_DELAY = 2000;
+    const groq = new Groq({
+        apiKey: "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",
+        dangerouslyAllowBrowser: true,
+    });
+    const [isSpeaking, setIsSpeaking] = useState(false);
 
     useEffect(() => {
-        if (transcript.length === 0) return;
-
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
-
-        timeoutRef.current = setTimeout(() => {
-            handleSearch();
-        }, AUTO_SUBMIT_DELAY);
-
-        return () => {
-            clearTimeout(timeoutRef.current);
-        };
-    }, [transcript]);
-
-    useEffect(() => {
-        if (browserSupportsSpeechRecognition) {
-            SpeechRecognition.startListening({continuous: true});
-        } else {
+        if (!browserSupportsSpeechRecognition) {
             alert("Browser doesn't support speech recognition.");
+            return;
         }
+
+        SpeechRecognition.startListening({continuous: true});
 
         navigator.mediaDevices.getUserMedia({
             audio: {
@@ -47,18 +37,35 @@ function App() {
         window.speechSynthesis.onvoiceschanged = () => {};
     }, [browserSupportsSpeechRecognition]);
 
-    if (!browserSupportsSpeechRecognition) {
-        return <span>Browser doesn't support speech recognition.</span>;
-    }
+    useEffect(() => {
+        if (transcript.length === 0) return;
 
-    const groq = new Groq({
-        apiKey: "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",
-        dangerouslyAllowBrowser: true,
-    });
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+        }
+
+        timeoutRef.current = setTimeout(() => {
+            handleSearch();
+        }, AUTO_SUBMIT_DELAY);
+
+        return () => clearTimeout(timeoutRef.current);
+    }, [transcript]);
+
+    useEffect(() => {
+        if (transcript.length === 0 || isSpeaking) return;
+
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+        timeoutRef.current = setTimeout(() => {
+            handleSearch();
+        }, AUTO_SUBMIT_DELAY);
+
+        return () => clearTimeout(timeoutRef.current);
+    }, [transcript, isSpeaking]);
 
     const handleSearch = async () => {
-        const userInput = transcript;
-        if (!userInput.trim()) return;
+        const userInput = transcript.trim();
+        if (!userInput) return;
 
         setResponse((prev) => [...prev, {sender: "user", message: userInput}]);
 
@@ -81,29 +88,36 @@ function App() {
         const voices = window.speechSynthesis.getVoices();
         const hindiVoice = voices.find(
             (voice) =>
-                voice.lang.includes("hi") ||
+                voice.lang.toLowerCase().includes("hi") ||
                 voice.name.toLowerCase().includes("hindi")
         );
+        const banglaVoice = voices.find(
+            (voice) =>
+                voice.lang.toLowerCase().includes("bn") ||
+                voice.name.toLowerCase().includes("bengali")
+        );
+
         if (hindiVoice) {
             utterance.voice = hindiVoice;
+        } else if (banglaVoice) {
+            utterance.voice = banglaVoice;
         }
 
         utterance.onstart = () => {
-            SpeechRecognition.stopListening();
+            setIsSpeaking(true);
         };
 
         utterance.onend = () => {
-            SpeechRecognition.startListening({continuous: true});
+            setIsSpeaking(false);
+            resetTranscript();
         };
 
         speechSynthesis.cancel();
         speechSynthesis.speak(utterance);
-
-        resetTranscript(); // Reset input
     };
 
-    if (transcript.length !== 0) {
-        window.speechSynthesis.cancel();
+    if (!browserSupportsSpeechRecognition) {
+        return <span>Browser doesn't support speech recognition.</span>;
     }
 
     return (
@@ -128,7 +142,7 @@ function App() {
             </div>
 
             <div className="flex flex-row items-center w-full md:w-2/3 gap-2 fixed bottom-4 justify-center">
-                <div className="bg-white shadow-md rounded-full px-4 py-2 flex items-center max-w-1/2 w-full overflow-hidden">
+                <div className="bg-white shadow-md rounded-full px-4 py-2 flex items-center w-full max-w-[80%] overflow-hidden">
                     <p className="text-gray-600 truncate">
                         {transcript.length === 0
                             ? "Say something..."
@@ -136,14 +150,12 @@ function App() {
                     </p>
                 </div>
 
-                <div className="flex gap-2">
-                    <button
-                        onClick={resetTranscript}
-                        className="bg-white p-2 rounded-full shadow-md hover:bg-gray-100"
-                    >
-                        <PiBroomDuotone className="text-2xl text-sky-600" />
-                    </button>
-                </div>
+                <button
+                    onClick={resetTranscript}
+                    className="bg-white p-2 rounded-full shadow-md hover:bg-gray-100"
+                >
+                    <PiBroomDuotone className="text-2xl text-sky-600" />
+                </button>
             </div>
         </div>
     );
